@@ -1,0 +1,47 @@
+# DGang deployment (Oracle free tier, nynmondal host)
+
+## Stack
+- Node backend: Express + Socket.IO on `:3000` (systemd `dgang.service`)
+- Frontend PWA served by same Node (or nginx proxy)
+- nginx reverse proxy: `dgang.bad.mn` → `127.0.0.1:3000`
+- HTTPS: Let's Encrypt via certbot
+- Media: uploaded to `/home/ubuntu/social-app/media/`
+
+## Files
+| File | Purpose |
+|---|---|
+| `dgang.service` | systemd unit (`/etc/systemd/system/dgang.service`) |
+| `nginx-dgang.conf` | nginx vhost → `/etc/nginx/sites-{available,enabled}/dgang.bad.mn` |
+| `finalize.sh` | run after DNS is live: verifies DNS, issues cert, reloads nginx |
+
+## First-time deploy
+1. **DNS** (afraid.org / FreeDNS): add `A` record
+   `dgang.bad.mn -> 140.245.252.78` (server public EIP). Wait ~5 min.
+2. Install systemd:
+   ```bash
+   sudo cp deploy/dgang.service /etc/systemd/system/
+   sudo systemctl daemon-reload && sudo systemctl enable --now dgang
+   ```
+   NOTE: `ExecStart` uses `/home/ubuntu/.local/bin/node` (v26). The ancient
+   `/usr/bin/node` (v12) can't parse `body-parser` — never use it.
+3. Install nginx vhost:
+   ```bash
+   sudo cp deploy/nginx-dgang.conf /etc/nginx/sites-available/dgang.bad.mn
+   sudo ln -sf /etc/nginx/sites-available/dgang.bad.mn /etc/nginx/sites-enabled/
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+4. Once DNS resolves, finalize SSL:
+   ```bash
+   ./deploy/finalize.sh
+   ```
+5. Verify: `curl https://dgang.bad.mn/api/health`
+
+## Common ops
+- Restart: `sudo systemctl restart dgang`
+- Logs: `sudo journalctl -u dgang -f`
+- Socket.IO + nginx: the `/socket.io/` location forwards Upgrade headers — required.
+- Caching: html/js/css are never cached (network-first) so bug-fixes reach users fast.
+
+## Ports
+- `:3000` — Node backend (localhost only, no direct firewall exposure)
+- `:80` / `:443` — nginx internet-facing

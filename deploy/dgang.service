@@ -1,0 +1,18 @@
+[Unit]
+Description=DGang - Group social app backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/social-app/server
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=DGANG_JWT_SECRET=dgang-server-secret-roté28xq
+ExecStart=/home/ubuntu/.local/bin/node index.js
+Restart=always
+RestartSec=3
+User=ubuntu
+Group=ubuntu
+
+[Install]
+WantedBy=multi-user.target

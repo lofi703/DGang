@@ -1,0 +1,16 @@
+# deps
+node_modules/
+
+# runtime data (sqlite + uploads) — never commit
+data/
+media/
+
+# secrets & artifacts
+*.keystore
+*.apk
+*.pem
+.env
+
+# os/editor
+.DS_Store
+*.log

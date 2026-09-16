@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#061126">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>DGang — Group Chat & Party</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="toast" class="toast"></div>
+
+<!-- ============ AUTH / LANDING ============ -->
+<div id="auth" class="auth hidden">
+  <div class="auth-card glass">
+    <div class="logo big">DG<span>ang</span></div>
+    <div class="tag">Tumhara group ka apna social app 🎉</div>
+    <div class="fl"><input id="aName" class="ipt" placeholder="Apna naam" maxlength="30" autocomplete="off"></div>
+    <div class="fl"><input id="aPin" class="ipt" type="password" inputmode="numeric" placeholder="PIN (4-6 digit)" maxlength="6"></div>
+    <div class="emojis" id="aEmoji">
+      <span data-e="😎" class="on">😎</span><span data-e="🤓">🤓</span><span data-e="🦁">🦁</span><span data-e="🕶️">🕶️</span>
+      <span data-e="🔥">🔥</span><span data-e="🤙">🤙</span><span data-e="😈">😈</span><span data-e="🐻">🐻</span>
+      <span data-e="👑">👑</span><span data-e="🎧">🎧</span><span data-e="💯">💯</span><span data-e="🫡">🫡</span>
+    </div>
+    <button class="btn grad btn-big" id="aGo">Continue →</button>
+    <div class="mini" style="margin-top:14px">Pehli baar → naya account banega.<br>Same naam + PIN → wapas login.</div>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="app" class="app hidden">
+  <!-- header -->
+  <div class="top">
+    <button class="pill" id="btnGroups" aria-label="Groups">⛭</button>
+    <div class="logo head" id="topTitle">DGang</div>
+    <button class="bell" id="btnNotif" aria-label="notifs">🔔<span class="dot" id="notifDot"></span></button>
+  </div>
+
+  <!-- GROUPS LIST -->
+  <div id="screen-groups" class="screen"></div>
+
+  <!-- CHAT -->
+  <div id="screen-chat" class="screen hidden">
+    <div class="chat-head glass" id="chatHead"></div>
+    <div id="chatMsg" class="chat-msgs"></div>
+    <div id="typing" class="typing"></div>
+    <div class="chat-bar">
+      <button class="att" id="btnPhoto" aria-label="photo">🖼️</button>
+      <button class="att" id="btnVideo" aria-label="video">🎬</button>
+      <input id="chatInput" class="ipt chat-ipt" placeholder="Message..." autocomplete="off" maxlength="1000">
+      <button class="send" id="btnSend" aria-label="send">➤</button>
+    </div>
+  </div>
+
+  <!-- REELS -->
+  <div id="screen-reels" class="screen hidden">
+    <div class="reels-head"><span class="rg-grad">Recs</span><button class="bell" id="btnReelAdd">＋</button></div>
+    <div id="reelFeed" class="reel-feed"></div>
+  </div>
+
+  <!-- YOUTUBE -->
+  <div id="screen-yt" class="screen hidden">
+    <div class="reels-head"><span>▶ YouTube</span></div>
+    <div id="ytPanel" class="yt-panel"></div>
+  </div>
+
+  <!-- GAME -->
+  <div id="screen-game" class="screen hidden"></div>
+
+  <!-- PROFILE -->
+  <div id="screen-profile" class="screen hidden"></div>
+
+  <!-- bottom nav -->
+  <nav class="nav">
+    <button class="act" data-screen="groups"><i>💬</i><span>Chats</span></button>
+    <button data-screen="reels"><i>🎞️</i><span>Recs</span></button>
+    <button class="nadd" data-screen="game" aria-label="Game"><i>🎮</i><span></span></button>
+    <button data-screen="yt"><i>▶️</i><span>Tube</span></button>
+    <button data-screen="profile"><i>👤</i><span>Me</span></button>
+  </nav>
+</div>
+
+<!-- modal -->
+<div id="modal" class="overlay hidden"><div class="sheet glass">
+  <div class="topline"><h2 id="mTitle">T</h2><button id="mClose">×</button></div>
+  <div id="mBody"></div>
+</div></div>
+
+<!-- hidden file inputs -->
+<input type="file" id="fPhoto" accept="image/*,.jpg,.png,.gif,.jpeg,.webp" hidden>
+<input type="file" id="fVideo" accept="video/*,.mp4,.webm,.mov,.mkv" hidden>
+<input type="file" id="fReel" accept="video/*,.mp4,.webm,.mov" hidden>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
