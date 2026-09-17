@@ -288,7 +288,7 @@ function openGame(){
   $('#screen-chat').classList.add('hidden'); $('#screen-reels').classList.add('hidden');
   $('#screen-yt').classList.add('hidden'); $('#screen-groups').classList.add('hidden'); $('#screen-profile').classList.add('hidden');
   const sc=$('#screen-game'); sc.classList.remove('hidden');
-  COLS=['#16a8ff','#ff3ec8','#21c77a','#ff8b2e'];
+  const COLS=['#16a8ff','#ff3ec8','#21c77a','#ff8b2e'];
   const col=COLS[(CURG?.id||0)%COLS.length];
   sc.innerHTML=`<div class="game-card glass" style="border:1px solid ${col}">
     <div class="game-ico">🎰</div>
