@@ -96,6 +96,21 @@
 <input type="file" id="fVideo" accept="video/*,.mp4,.webm,.mov,.mkv" hidden>
 <input type="file" id="fReel" accept="video/*,.mp4,.webm,.mov" hidden>
 
+<!-- call overlay -->
+<div id="callScreen" class="call overlay hidden">
+  <video id="callRemote" class="call-remote" autoplay playsinline></video>
+  <video id="callLocal" class="call-local" autoplay playsinline muted></video>
+  <div class="call-ui">
+    <div id="callInfo" class="call-info">Calling...</div>
+    <div class="call-btns">
+      <button id="callMic" class="cbtn" aria-label="mic">🎤</button>
+      <button id="callCam" class="cbtn" aria-label="camera">📷</button>
+      <button id="callEnd" class="cbtn end" aria-label="end">📞</button>
+      <button id="callMute" class="cbtn" aria-label="speaker">🔊</button>
+    </div>
+  </div>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script src="app.js"></script>
 </body>

@@ -177,6 +177,25 @@ function reelJson(rid) {
     ts: r.ts, sender: r.sender, emoji: r.su, c1: r.sc1, c2: r.sc2, likes: likerCount(rid) }; }
 function likerCount(rid) { return db.prepare('SELECT COUNT(*) c FROM reel_likes WHERE reel_id=?').get(rid).c; }
 
+// ---------- TURN credentials (coturn REST API auth) ----------
+const TURN_SECRET = process.env.DGANG_TURN_SECRET || 'm6IF6PHtj/qKeLkcFgzSpP9qayc+J/s/';
+const TURN_LIFETIME = 24 * 3600;
+const crypto = require('crypto');
+function turnCreds(uid) {
+  const ts = Math.floor(Date.now() / 1000) + TURN_LIFETIME;
+  const username = ts + ':' + uid;
+  const cred = crypto.createHmac('sha1', TURN_SECRET).update(username).digest('base64');
+  return { username, credential: cred, ttl: TURN_LIFETIME };
+}
+app.get('/api/turn', auth.authMiddleware, (req, res) => {
+  res.json({ iceServers: [
+    { urls: ['stun:140.245.252.78:3478', 'stun:dgang.mooo.com:3478'] },
+    { urls: ['turn:140.245.252.78:3478?transport=udp','turn:140.245.252.78:3478?transport=tcp',
+             'turn:dgang.mooo.com:3478?transport=udp','turn:dgang.mooo.com:3478?transport=tcp'],
+      username: turnCreds('dgang').username, credential: turnCreds('dgang').credential }
+  ]});
+});
+
 // ---------- socket presence ----------
 const online = new Set(); // userIds
 function joinSocketRoom(uid, gid) {

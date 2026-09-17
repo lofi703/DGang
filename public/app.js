@@ -54,7 +54,8 @@ function connect(){
   SOCK.on('presence',d=>{ ONLINE[d.group_id]=new Set(d.online); if(CURG&&CURG.id===d.group_id)renderChatHead(); renderGroups(); });
   SOCK.on('typing',d=>{ TYPING[d.group_id]=d; renderTyping(); setTimeout(()=>{delete TYPING[d.group_id];renderTyping();},1500); });
   SOCK.on('stop_typing',d=>{ delete TYPING[d.group_id]; renderTyping(); });
-  SOCK.on('call',d=>{ notif(d.from.name+' ko call aaya 🔔'); });
+  SOCK.on('call',d=>notif(d.from.name+' ko call aaya 🔔'));
+  initCall();
 }
 function bumpReaction(d){
   for(const k in MSGS){ const m=MSGS[k].find(x=>x.id===d.message_id); if(m){m.reactions=d.reactions;if(CURG&&CURG.id===k)renderChat();break;} }
@@ -148,8 +149,12 @@ function renderChatHead(){
   head.innerHTML=`${av(CURG.members[0]||{c1:'#14b8ff',c2:'#635bff',emoji:'👥'})}
     <div style="flex:1;min-width:0"><div class="grp-name">${ESC(CURG.name)}</div>
     <div class="grp-sub">${online.size?online.size+' online':'sab offline'}</div></div>
+    <button class="bell" id="btnCallVideo" style="color:#21c77a" aria-label="video call">📹</button>
+    <button class="bell" id="btnCallAudio" style="color:#16a8ff" aria-label="audio call">📞</button>
     <button class="bell" id="chInfo">ℹ️</button>`;
   $('#chInfo').onclick=showGroupInfo;
+  $('#btnCallVideo').onclick=()=>startCall('video');
+  $('#btnCallAudio').onclick=()=>startCall('audio');
 }
 function renderChat(){
   if(!CURG||SCREEN!=='chat')return;
@@ -329,6 +334,113 @@ function spinTOT(){
   $('#totSend').style.display='';
 }
 function pick(a){return a[Math.floor(Math.random()*a.length)];}
+
+/* ============ CALLS (WebRTC + coturn TURN) ============ */
+let pc=null, localStream=null, callTimer=null, callActive=false, callType='video';
+let pendingCall=null, pendingOffer=null, isCaller=false, remoteName='';
+const callScreen=()=>$('#callScreen');
+
+async function getIceServers(){
+  try{ const d=await api('/api/turn'); return d.iceServers; }catch(e){ return [{urls:'stun:stun.l.google.com:19302'}]; }
+}
+async function initCall(){
+  if(callBooted) return;
+  callBooted=true;
+  SOCK.on('call',d=>onIncoming(d));
+  SOCK.on('call_offer',d=>onOffer(d));
+  SOCK.on('call_answer',d=>onAnswer(d));
+  SOCK.on('call_ice',d=>onIce(d));
+  SOCK.on('call_hangup',d=>onRemoteHangup(d));
+}
+let callBooted=false;
+
+function startCall(type){
+  if(!CURG)return toast('Pehle group kholo');
+  callType=type; remoteName=CURG.name; isCaller=true;
+  showCallUI('Calling '+CURG.name+'...');
+  SOCK.emit('call',{group_id:CURG.id,type});
+  doCall(true);
+}
+async function doCall(asCaller){
+  try{
+    localStream=await navigator.mediaDevices.getUserMedia({video:callType==='video',audio:true});
+    $('#callLocal').srcObject=localStream;
+    pc=new RTCPeerConnection({iceServers:await getIceServers()});
+    localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+    pc.onicecandidate=e=>{ if(e.candidate&&CURG)SOCK.emit('call_ice',{group_id:CURG.id,candidate:e.candidate}); };
+    pc.ontrack=e=>{ $('#callRemote').srcObject=e.streams[0]; };
+    if(asCaller){
+      const offer=await pc.createOffer(); await pc.setLocalDescription(offer);
+      SOCK.emit('call_offer',{group_id:CURG.id,sdp:pc.localDescription,type:callType});
+      clearTimeout(callTimer); callTimer=setTimeout(()=>{ if(!callActive){hangup(true);toast('No answer — Call hua nahi 📵');} },30000);
+    } else if(pendingOffer){
+      await pc.setRemoteDescription(new RTCSessionDescription(pendingOffer));
+      const ans=await pc.createAnswer(); await pc.setLocalDescription(ans);
+      SOCK.emit('call_answer',{group_id:CURG.id,sdp:pc.localDescription});
+      callActive=true; showCallUI('Connected — '+remoteName);
+    }
+  }catch(e){ hangup(true); toast('Camera/Mic access nahi — Chrome mein allow karo 🎤'); }
+}
+
+async function onIncoming(d){
+  if(callActive) return;
+  callType=d.type||'video'; remoteName=d.from.name; isCaller=false;
+  pendingCall={from:d.from,type:callType}; pendingOffer=null;
+  showCallUI(d.from.name+' 👋 (Video)','ring');
+}
+async function acceptCall(){
+  const f=pendingCall; if(!f){ hangup(true); return; }
+  remoteName=f.from.name; pendingCall=null;
+  showCallUI('Connecting with '+remoteName+'...');
+  await doCall(false);
+}
+async function onOffer(d){
+  if(!d||!d.sdp)return;
+  // ring ke dauran -> store karo, accept pe use hoga
+  if(pendingCall){ pendingOffer=d.sdp; return; }
+  // already in a call expecting answer -> apply offer directly
+  if(pc && !isCaller && pc.signalingState!=='have-remote-offer'){
+    try{
+      await pc.setRemoteDescription(new RTCSessionDescription(d.sdp));
+      const ans=await pc.createAnswer(); await pc.setLocalDescription(ans);
+      SOCK.emit('call_answer',{group_id:CURG.id,sdp:pc.localDescription});
+      callActive=true; showCallUI('Connected — '+remoteName);
+    }catch(e){}
+  }
+}
+async function onAnswer(d){
+  if(!pc||!d.sdp)return;
+  try{ await pc.setRemoteDescription(new RTCSessionDescription(d.sdp)); callActive=true; showCallUI('Connected — '+remoteName); clearTimeout(callTimer); }catch(e){}
+}
+async function onIce(d){
+  if(!pc||!d.candidate)return;
+  try{ await pc.addIceCandidate(new RTCIceCandidate(d.candidate)); }catch(e){}
+}
+function onRemoteHangup(d){ if(callActive||callTimer){ hangup(true); toast(remoteName+' call cut ho gaya'); } }
+function hangup(sendSignal){
+  if(SOCK&&CURG&&sendSignal)SOCK.emit('call_hangup',{group_id:CURG.id});
+  if(pc){ try{pc.close();}catch(e){} pc=null; }
+  if(localStream){ localStream.getTracks().forEach(t=>t.stop()); localStream=null; }
+  try{ $('#callRemote').srcObject=null; $('#callLocal').srcObject=null; }catch(e){}
+  callActive=false; pendingCall=null; pendingOffer=null; clearTimeout(callTimer); callScreen().classList.add('hidden');
+}
+
+function showCallUI(info, mode){
+  callScreen().classList.remove('hidden');
+  $('#callInfo').textContent=info||'Call...';
+  const overlay=$('#modal'); if(overlay)overlay.classList.add('hidden');
+  const btns=$('.call-btns');
+  if(mode==='ring'){
+    btns.innerHTML=`<button class="cbtn" id="callReject" style="background:var(--red)">✖</button><button class="cbtn" id="callAccept" style="background:var(--green)">📞</button>`;
+    $('#callReject').onclick=()=>{ pendingCall=null; callScreen().classList.add('hidden'); };
+    $('#callAccept').onclick=acceptCall;
+  } else {
+    btns.innerHTML=`<button id="callMic" class="cbtn" aria-label="mic">🎤</button><button id="callCam" class="cbtn" aria-label="cam">📷</button><button id="callEnd" class="cbtn end" aria-label="end">📞</button>`;
+    $('#callMic').onclick=()=>{ const el=$('#callMic'); const t=localStream.getAudioTracks()[0]; if(t){t.enabled=!t.enabled; el.classList.toggle('off',!t.enabled);} };
+    $('#callCam').onclick=()=>{ const el=$('#callCam'); const t=localStream.getVideoTracks()[0]; if(t){t.enabled=!t.enabled; el.classList.toggle('off',!t.enabled);} $('#callLocal').style.display=(t&&t.enabled)?'':'none'; };
+    $('#callEnd').onclick=()=>{ hangup(true); };
+  }
+}
 
 /* ============ PROFILE ============ */
 function renderProfile(){
