@@ -73,6 +73,7 @@ function bindAuth(){
       const d=await api('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,pin,emoji})});
       TOK=d.token; ME=d.user; saveTok();
       await refreshAll(); connect(); showApp(); notif('Welcome '+ME.name+' 🎉'); go('groups');
+      setupPush(); // auto-subscribe if permission already granted
     }catch(e){ toast(e.message==='wrong_pin'?'PIN galat hai 🤨':'Try again!'); }
   };
 }
@@ -252,14 +253,31 @@ function renderReels(){
   if(!REELS[CURG.id]){ loadReels(); return; }
   const feed=$('#reelFeed');
   if(!REELS[CURG.id].length){feed.innerHTML='<div class="mini" style="text-align:center;margin-top:40px">Abhi koi reels nahi.<br>Group ki funny clips upload karo ➕</div>';return;}
-  feed.innerHTML=REELS[CURG.id].map(r=>`
-    <div class="reel-card">
-      <video class="reel-vid" src="media/${r.video_url.split('/').pop()}" poster="${r.poster_url?'media/'+r.poster_url.split('/').pop():''}" controls loop playsinline preload="metadata"></video>
+  feed.innerHTML=REELS[CURG.id].map((r,i)=>`
+    <div class="reel-card" data-idx="${i}">
+      <video class="reel-vid" id="rv${i}" src="media/${r.video_url.split('/').pop()}" poster="${r.poster_url?'media/'+r.poster_url.split('/').pop():''}" playsinline loop preload="metadata"></video>
+      <button class="reel-mute" id="rm${i}">🔊</button>
+      <button class="reel-like-big" id="rl${i}">❤️</button>
       <div class="reel-cap"><div class="av" style="width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,${r.c1},${r.c2});display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">${r.emoji}</div>
         <div class="reel-vmeta"><b>${ESC(r.sender)}</b>${r.caption?' · '+ESC(r.caption):''}</div>
         <button class="reel-like" data-r="${r.id}">❤️<div class="likes">${r.likes}</div></button>
       </div></div>`).join('');
   $$('.reel-like').forEach(el=>el.onclick=()=>likeReel(+el.dataset.r));
+  $$('.reel-mute').forEach(el=>el.onclick=()=>{
+    const idx=+el.id.slice(2); const v=document.getElementById('rv'+idx);
+    v.muted=!v.muted; el.textContent=v.muted?'🔇':'🔊';
+  });
+  $$('.reel-like-big').forEach(el=>el.onclick=e=>{
+    const idx=+el.id.slice(2), v=document.getElementById('rv'+idx);
+    el.classList.add('pop'); setTimeout(()=>el.classList.remove('pop'),600);
+    const reel=REELS[CURG.id][idx]; if(reel)likeReel(reel.id);
+  });
+  // tap video to play/pause, auto-play only active
+  $$('.reel-vid').forEach((v,i)=>{
+    v.onclick=()=>{ if(v.paused)v.play(); else v.pause(); };
+    const io=new IntersectionObserver(es=>es.forEach(x=>{ if(x.isIntersecting)v.play(); else v.pause(); }),{threshold:.6});
+    io.observe(v);
+  });
 }
 async function likeReel(id){ try{ await api('/api/reel/'+id+'/like',{method:'POST'}); }catch(e){} }
 async function uploadReel(file){
@@ -451,12 +469,14 @@ function renderProfile(){
     <div class="me-name">${ESC(ME.name)}</div>
     <div class="me-sub">DGang user</div>
     <div class="row-line"><span>Mere groups</span><b>${AG.length}</b></div>
-    <div class="row-line"><span>App</span><span>DGang v1.0</span></div>
+    <div class="row-line"><span>App</span><span>DGang v1.1</span></div>
     <div class="row-line"><span>License</span><span style="font-size:12px">MIT · Open Source</span></div>
+    <div class="row-line"><span>Notifications</span><button id="btnNotifPrompt">🔔 Enable</button></div>
     <button class="btn grad" style="margin-top:18px" id="btnLogout">Logout</button>
     <div class="mini" style="text-align:center;margin-top:12px">Made with 🖤 · Nayan Mondal</div>
   </div>`;
   $('#btnLogout').onclick=()=>{TOK=null;saveTok();location.reload();};
+  const np=$('#btnNotifPrompt'); if(np){ const st=Notification&&Notification.permission==='granted'?'✅ On':'🔔 Enable'; np.textContent=st; np.onclick=promptNotifications; }
 }
 
 /* ============ MODAL ============ */
@@ -466,4 +486,43 @@ function bindModal(){ $('#mClose').onclick=closeModal; $('#modal').onclick=e=>{i
 
 /* ---------- init ---------- */
 document.addEventListener('DOMContentLoaded',()=>{boot();bindChatInput();});
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+let SW_READY=false;
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(()=>{SW_READY=true;}).catch(()=>{});
+
+// ---- Web Push subscription ----
+let subscribed=false;
+async function setupPush(){
+  try{
+    if(!SW_READY || !('PushManager' in window) || !('Notification' in Notification)) return;
+    const perm=Notification.permission;
+    if(perm==='denied') return;
+    if(perm!=='granted'){
+      // ask on first open (after login) — wait, only ask on explicit or soft prompt
+      return; // ask via button in profile instead
+    }
+    if(perm==='granted'){
+      const reg=await navigator.serviceWorker.ready;
+      const k=await api('/api/push/vapidkey');
+      const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToUint8Array(k.key)});
+      await api('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)});
+      subscribed=true;
+    }
+  }catch(e){ console.log('push setup:', e.message); }
+}
+function urlB64ToUint8Array(base64String){
+  const padding='='.repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(base64); const out=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);
+  return out;
+}
+async function promptNotifications(){
+  try{
+    if(!SW_READY||!('Notification'in window))return toast('Notifications supported nahi');
+    const perm=Notification.permission;
+    if(perm==='granted'){ await setupPush(); return toast('Notifications ON 🔔'); }
+    const p=await Notification.requestPermission();
+    if(p==='granted'){ await setupPush(); toast('Notifications ON 🔔'); }
+    else toast('Notifications off rahe');
+  }catch(e){ toast('Notification error'); }
+}

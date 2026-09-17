@@ -75,6 +75,13 @@ CREATE TABLE IF NOT EXISTS games (
   created_by INTEGER NOT NULL REFERENCES users(id),
   ts        INTEGER DEFAULT (unixepoch())
 );
+CREATE TABLE IF NOT EXISTS push_subs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint      TEXT NOT NULL UNIQUE,
+  keys          TEXT NOT NULL,                -- JSON {auth,p256dh}
+  created_at    INTEGER DEFAULT (unixepoch())
+);
 `);
 
 // ---- helpers ----

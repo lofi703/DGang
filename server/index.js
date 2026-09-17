@@ -9,6 +9,11 @@ const multer = require('multer');
 
 const { db, publicUser } = require('./db');
 const auth = require('./auth');
+const webpush = require('web-push');
+// VAPID keys
+let VAPID_KEY='', VAPID_PRIV='';
+try{ const v=fs.readFileSync(path.join(__dirname,'..','.vapid'),'utf8').split('\n'); VAPID_KEY=v[0].trim(); VAPID_PRIV=v[1].trim();
+  webpush.setVapidDetails('mailto:nayanmonda245@gmail.com', VAPID_KEY, VAPID_PRIV); }catch(e){ console.log('No VAPID keys:', e.message); }
 
 // ---------- config ----------
 const PORT = process.env.PORT || 3000;
@@ -110,6 +115,9 @@ app.post('/api/group/:id/message', auth.authMiddleware, upload.single('file'), (
   const m = rowWithReactions(db.prepare(`SELECT m.*, u.name sender, u.emoji, u.c1, u.c2 FROM messages m
     JOIN users u ON u.id=m.user_id WHERE m.id=?`).get(r.lastInsertRowid));
   io.to('g' + gid).emit('message', m);
+  // push to offline group members
+  const off = groupMemberIds.all(gid).map(x=>x.uid).filter(uid=>uid!==req.user.id && !online.has(uid));
+  if(off.length) sendPush(off, '💬 '+req.user.name, m.type==='photo'?'🖼️ Photo share hui':m.type==='video'?'🎬 Video share hua':(m.body||'').slice(0,120), '/');
   res.json({ message: m });
 });
 
@@ -196,6 +204,33 @@ app.get('/api/turn', auth.authMiddleware, (req, res) => {
   ]});
 });
 
+// ---------- Web Push ----------
+app.get('/api/push/vapidkey', (req, res) => res.json({ key: VAPID_KEY }));
+app.post('/api/push/subscribe', auth.authMiddleware, (req, res) => {
+  const { endpoint, keys } = req.body || {};
+  if (!endpoint || !keys) return res.status(400).json({ error: 'bad_subscription' });
+  db.prepare('INSERT OR REPLACE INTO push_subs(user_id,endpoint,keys) VALUES(?,?,?)')
+    .run(req.user.id, endpoint, JSON.stringify(keys));
+  res.json({ ok: true });
+});
+function subsForUsers(userIds) {
+  if (!userIds.length) return [];
+  const ph = userIds.map(()=>'?').join(',');
+  const rows = db.prepare(`SELECT endpoint, keys FROM push_subs WHERE user_id IN (${ph})`).all(...userIds);
+  return rows.map(r => ({ endpoint: r.endpoint, keys: JSON.parse(r.keys) }));
+}
+function sendPush(userIds, title, body, url) {
+  const payload = JSON.stringify({ title, body, url });
+  subsForUsers(userIds).forEach(sub => {
+    webpush.sendNotification(sub, payload, { TTL: 60 }).catch(err => {
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        db.prepare('DELETE FROM push_subs WHERE endpoint=?').run(sub.endpoint);
+      }
+    });
+  });
+}
+const groupMemberIds = db.prepare('SELECT user_id uid FROM group_members WHERE group_id=?');
+
 // ---------- socket presence ----------
 const online = new Set(); // userIds
 function joinSocketRoom(uid, gid) {
@@ -237,6 +272,9 @@ io.on('connection', (socket) => {
   // call signaling (WebRTC) — Phase 2
   socket.on('call', (payload) => {
     socket.to('g' + payload.group_id).emit('call', { from: socket.data.user, type: payload.type });
+    // push incoming call to offline members
+    const off = groupMemberIds.all(payload.group_id).map(x=>x.uid).filter(uid=>uid!==socket.data.uid && !online.has(uid));
+    if(off.length) sendPush(off, '📞 '+socket.data.user.name, (payload.type==='video'?'Video':'Audio')+' call aa raha hai', '/');
   });
   socket.on('call_offer', (p) => { socket.to('g' + p.group_id).emit('call_offer', { from: socket.data.user, ...p }); });
   socket.on('call_answer', (p) => { socket.to('g' + p.group_id).emit('call_answer', { from: socket.data.user, ...p }); });
